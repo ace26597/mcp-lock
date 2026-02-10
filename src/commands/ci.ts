@@ -66,11 +66,27 @@ export async function ciCommand(options: CiOptions): Promise<void> {
 
   // Write SARIF if requested
   if (options.sarif) {
+    // Generic rule descriptions (not instance-specific)
+    const ruleDescriptions: Record<string, string> = {
+      "description-changed": "Tool description hash changed (possible tool poisoning)",
+      "schema-changed": "Tool input schema changed",
+      "capability-changed": "Tool capabilities changed",
+      "tool-added": "New tool appeared",
+      "tool-removed": "Tool was removed",
+      "server-added": "New server appeared",
+      "server-removed": "Server was removed",
+      "version-changed": "Server version changed",
+      "tool-count-changed": "Tool count changed",
+    };
+
     // Deduplicate rule IDs for SARIF rules array
     const ruleMap = new Map<string, { id: string; description: string }>();
     for (const e of diff.entries) {
       if (!ruleMap.has(e.type)) {
-        ruleMap.set(e.type, { id: e.type, description: e.detail });
+        ruleMap.set(e.type, {
+          id: e.type,
+          description: ruleDescriptions[e.type] || e.type,
+        });
       }
     }
 

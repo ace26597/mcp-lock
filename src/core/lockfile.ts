@@ -117,6 +117,9 @@ export function readLockfile(lockfilePath: string): Lockfile | null {
     ) {
       return null;
     }
+    if (Array.isArray(parsed.servers)) {
+      return null;
+    }
     if (parsed.version > LOCKFILE_VERSION) {
       throw new Error(
         `Lockfile version ${parsed.version} is newer than supported (${LOCKFILE_VERSION}). Please upgrade mcp-lock.`

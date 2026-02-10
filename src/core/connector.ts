@@ -116,7 +116,11 @@ async function connectWithClient(
       tools,
     };
   } finally {
-    await client.close().catch(() => {});
+    // Ensure cleanup even if close() hangs (e.g., after timeout)
+    await Promise.race([
+      client.close().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+    ]);
   }
 }
 

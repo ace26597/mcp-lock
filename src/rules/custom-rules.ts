@@ -31,7 +31,7 @@ interface CustomRulesFile {
  */
 export function loadCustomRules(rulesPath: string): Rule[] {
   const raw = readFileSync(rulesPath, "utf-8");
-  const parsed = yaml.load(raw) as CustomRulesFile;
+  const parsed = yaml.load(raw, { schema: yaml.DEFAULT_SCHEMA }) as CustomRulesFile;
 
   if (!parsed || !Array.isArray(parsed.rules)) {
     throw new Error(
@@ -42,6 +42,13 @@ export function loadCustomRules(rulesPath: string): Rule[] {
   return parsed.rules.map((entry) => yamlRuleToRule(entry, rulesPath));
 }
 
+/**
+ * Detect common ReDoS patterns: nested quantifiers like (a+)+, (a*)*
+ */
+function isUnsafeRegex(pattern: string): boolean {
+  return /(\+|\*|\{)\s*\)(\+|\*|\{|\?)/.test(pattern);
+}
+
 function yamlRuleToRule(entry: CustomRuleYaml, filePath: string): Rule {
   if (!entry.id || !entry.scope || !entry.severity || !entry.title) {
     throw new Error(
@@ -49,16 +56,43 @@ function yamlRuleToRule(entry: CustomRuleYaml, filePath: string): Rule {
     );
   }
 
-  // Pre-compile regex patterns
-  const descriptionRe = entry.description
-    ? new RegExp(entry.description.pattern, entry.description.flags ?? "")
-    : null;
-  const nameRe = entry.name
-    ? new RegExp(entry.name.pattern, entry.name.flags ?? "")
-    : null;
-  const schemaRe = entry.schema
-    ? new RegExp(entry.schema.pattern, entry.schema.flags ?? "")
-    : null;
+  // Pre-compile regex patterns with validation
+  let descriptionRe: RegExp | null = null;
+  let nameRe: RegExp | null = null;
+  let schemaRe: RegExp | null = null;
+
+  try {
+    if (entry.description) {
+      if (isUnsafeRegex(entry.description.pattern)) {
+        throw new Error(`Potentially unsafe regex pattern (nested quantifiers)`);
+      }
+      descriptionRe = new RegExp(entry.description.pattern, entry.description.flags ?? "");
+    }
+  } catch (err) {
+    throw new Error(`Invalid description regex in rule "${entry.id}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    if (entry.name) {
+      if (isUnsafeRegex(entry.name.pattern)) {
+        throw new Error(`Potentially unsafe regex pattern (nested quantifiers)`);
+      }
+      nameRe = new RegExp(entry.name.pattern, entry.name.flags ?? "");
+    }
+  } catch (err) {
+    throw new Error(`Invalid name regex in rule "${entry.id}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    if (entry.schema) {
+      if (isUnsafeRegex(entry.schema.pattern)) {
+        throw new Error(`Potentially unsafe regex pattern (nested quantifiers)`);
+      }
+      schemaRe = new RegExp(entry.schema.pattern, entry.schema.flags ?? "");
+    }
+  } catch (err) {
+    throw new Error(`Invalid schema regex in rule "${entry.id}": ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   return {
     id: entry.id,

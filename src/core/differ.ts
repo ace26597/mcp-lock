@@ -1,6 +1,6 @@
 import type { Lockfile, LockfileServer, LockfileTool, LiveServerInfo } from "./types.js";
 import type { MCPConfig } from "../parsers/types.js";
-import { hashValue } from "../utils/hash.js";
+import { hashValue, secureCompare } from "../utils/hash.js";
 import { connectAndListTools } from "./connector.js";
 import { inferCapabilities } from "./capabilities.js";
 
@@ -165,10 +165,10 @@ function diffServerTools(
 
     const liveDescHash = hashValue(liveTool.description || "");
     const liveSchemaHash = hashValue(liveTool.inputSchema || {});
-    const liveCaps = inferCapabilities(liveTool.description || "", toolName);
+    const liveCaps = inferCapabilities(liveTool.description || "", toolName, liveTool.inputSchema as Record<string, unknown> | undefined);
 
     // Description drift — CRITICAL (possible tool poisoning)
-    if (lockedTool.descriptionHash !== liveDescHash) {
+    if (!secureCompare(lockedTool.descriptionHash, liveDescHash)) {
       entries.push({
         server: serverName,
         tool: toolName,
@@ -181,7 +181,7 @@ function diffServerTools(
     }
 
     // Schema drift
-    if (lockedTool.inputSchemaHash !== liveSchemaHash) {
+    if (!secureCompare(lockedTool.inputSchemaHash, liveSchemaHash)) {
       entries.push({
         server: serverName,
         tool: toolName,

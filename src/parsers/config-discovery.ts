@@ -290,6 +290,8 @@ function parseConfigFile(
   configPath: string,
   client: string
 ): MCPConfig | null {
+  if (!existsSync(configPath)) return null;
+
   try {
     const raw = readFileSync(configPath, "utf-8");
     const parsed = parseJsonc(raw);
@@ -332,7 +334,9 @@ function parseConfigFile(
     if (Object.keys(servers).length === 0) return null;
 
     return { client, configPath, servers };
-  } catch {
+  } catch (err) {
+    // File exists but is malformed - warn user instead of silent skip
+    console.error(`Warning: Failed to parse ${client} config at ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
