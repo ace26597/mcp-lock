@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "poisoned-test": {
+      "command": "node",
+      "args": ["tests/servers/poisoned-server.mjs"]
+    }
+  }
+}

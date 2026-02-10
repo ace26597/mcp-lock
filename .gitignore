@@ -6,3 +6,5 @@ dist/
 coverage/
 .DS_Store
 *.log
+test-lockfile.json
+tests/benchmark-results.json

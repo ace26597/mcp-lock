@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "safe-test": {
+      "command": "node",
+      "args": ["tests/servers/drifted-server.mjs"]
+    }
+  }
+}

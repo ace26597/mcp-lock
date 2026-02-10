@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "safe-test": {
+      "command": "node",
+      "args": ["tests/servers/safe-server.mjs"]
+    },
+    "poisoned-test": {
+      "command": "node",
+      "args": ["tests/servers/poisoned-server.mjs"]
+    }
+  }
+}
