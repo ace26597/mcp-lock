@@ -1,13 +1,29 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { MCPServerConfig } from "../parsers/types.js";
 import type { LiveServerInfo, LiveTool } from "./types.js";
 
+const DANGEROUS_ENV_VARS = new Set([
+  "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS",
+  "PYTHONSTARTUP", "PYTHONPATH", "RUBYOPT",
+]);
+
+function sanitizeEnv(userEnv: Record<string, string>): Record<string, string> {
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(userEnv)) {
+    if (DANGEROUS_ENV_VARS.has(key)) continue;
+    sanitized[key] = value;
+  }
+  return sanitized;
+}
+
 /**
  * Connect to an MCP server and retrieve its tool definitions.
- *
- * Uses the MCP protocol: initialize → tools/list
- *
- * For stdio servers: spawns the process, communicates via JSON-RPC over stdin/stdout.
- * For HTTP servers: sends HTTP requests to the server URL.
+ * Uses the official MCP SDK for all transports (stdio, SSE, Streamable HTTP).
  */
 export async function connectAndListTools(
   serverName: string,
@@ -28,156 +44,21 @@ async function connectStdio(
   config: MCPServerConfig,
   timeoutMs: number
 ): Promise<LiveServerInfo> {
-  const { spawn } = await import("node:child_process");
+  // Build env: start with process.env (filtering undefined), then merge user config
+  const baseEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined) baseEnv[k] = v;
+  }
+  const env = { ...baseEnv, ...sanitizeEnv(config.env || {}) };
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      proc.kill();
-      reject(new Error(`Connection timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    const env = { ...process.env, ...(config.env || {}) };
-    const proc = spawn(config.command!, config.args || [], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-    });
-
-    let stdout = "";
-
-    proc.stdout!.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-      // Try to parse complete JSON-RPC messages
-      tryProcessMessages(stdout, proc, timeout, resolve, reject);
-    });
-
-    proc.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(new Error(`Failed to spawn: ${err.message}`));
-    });
-
-    proc.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code !== 0 && code !== null) {
-        reject(new Error(`Process exited with code ${code}`));
-      }
-    });
-
-    // Send initialize request
-    const initRequest = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: {
-          name: "mcp-lock",
-          version: "0.1.0",
-        },
-      },
-    };
-
-    proc.stdin!.write(
-      `Content-Length: ${Buffer.byteLength(JSON.stringify(initRequest))}\r\n\r\n${JSON.stringify(initRequest)}`
-    );
+  const transport = new StdioClientTransport({
+    command: config.command!,
+    args: config.args,
+    env,
+    stderr: "pipe",
   });
-}
 
-/**
- * Process JSON-RPC messages from stdout buffer.
- * Handles the initialize → initialized → tools/list flow.
- */
-function tryProcessMessages(
-  buffer: string,
-  proc: ReturnType<typeof import("node:child_process").spawn>,
-  timeout: ReturnType<typeof setTimeout>,
-  resolve: (info: LiveServerInfo) => void,
-  reject: (err: Error) => void
-): void {
-  // Parse Content-Length delimited messages
-  const messages = extractJsonRpcMessages(buffer);
-
-  for (const msg of messages) {
-    try {
-      const parsed = JSON.parse(msg);
-
-      // Initialize response (id: 1)
-      if (parsed.id === 1 && parsed.result) {
-        const serverInfo = parsed.result.serverInfo || {};
-
-        // Send initialized notification
-        const notif = { jsonrpc: "2.0", method: "notifications/initialized" };
-        proc.stdin!.write(
-          `Content-Length: ${Buffer.byteLength(JSON.stringify(notif))}\r\n\r\n${JSON.stringify(notif)}`
-        );
-
-        // Send tools/list request
-        const toolsReq = {
-          jsonrpc: "2.0",
-          id: 2,
-          method: "tools/list",
-          params: {},
-        };
-        proc.stdin!.write(
-          `Content-Length: ${Buffer.byteLength(JSON.stringify(toolsReq))}\r\n\r\n${JSON.stringify(toolsReq)}`
-        );
-
-        // Store server info for later
-        (proc as any).__serverInfo = {
-          protocolVersion: parsed.result.protocolVersion,
-          serverName: serverInfo.name,
-          serverVersion: serverInfo.version,
-        };
-      }
-
-      // Tools/list response (id: 2)
-      if (parsed.id === 2 && parsed.result) {
-        clearTimeout(timeout);
-        const tools: LiveTool[] = (parsed.result.tools || []).map(
-          (t: any) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.inputSchema,
-          })
-        );
-
-        const info = (proc as any).__serverInfo || {};
-        proc.kill();
-
-        resolve({
-          ...info,
-          tools,
-        });
-      }
-    } catch {
-      // Incomplete message, wait for more data
-    }
-  }
-}
-
-function extractJsonRpcMessages(buffer: string): string[] {
-  const messages: string[] = [];
-  let remaining = buffer;
-
-  while (remaining.length > 0) {
-    const headerEnd = remaining.indexOf("\r\n\r\n");
-    if (headerEnd === -1) break;
-
-    const header = remaining.slice(0, headerEnd);
-    const match = header.match(/Content-Length:\s*(\d+)/i);
-    if (!match) break;
-
-    const contentLength = parseInt(match[1], 10);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + contentLength;
-
-    if (remaining.length < bodyEnd) break;
-
-    messages.push(remaining.slice(bodyStart, bodyEnd));
-    remaining = remaining.slice(bodyEnd);
-  }
-
-  return messages;
+  return connectWithClient(transport, timeoutMs);
 }
 
 async function connectHttp(
@@ -185,60 +66,64 @@ async function connectHttp(
   config: MCPServerConfig,
   timeoutMs: number
 ): Promise<LiveServerInfo> {
-  const url = config.url!;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const url = new URL(config.url!);
+
+  // If transport is explicitly specified, use it directly
+  if (config.transport === "sse") {
+    return connectWithClient(new SSEClientTransport(url), timeoutMs);
+  }
+
+  if (config.transport === "streamable-http") {
+    return connectWithClient(new StreamableHTTPClientTransport(url), timeoutMs);
+  }
+
+  // Auto-detect: try Streamable HTTP first, fall back to legacy SSE
+  try {
+    return await connectWithClient(new StreamableHTTPClientTransport(url), timeoutMs);
+  } catch {
+    return await connectWithClient(new SSEClientTransport(url), timeoutMs);
+  }
+}
+
+/**
+ * Create an MCP Client, connect via the given transport, list tools, then close.
+ */
+async function connectWithClient(
+  transport: Transport,
+  timeoutMs: number
+): Promise<LiveServerInfo> {
+  const client = new Client(
+    { name: "mcp-lock", version: "0.1.0" },
+    { capabilities: {} }
+  );
 
   try {
-    // Send initialize
-    const initResp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "mcp-lock", version: "0.1.0" },
-        },
-      }),
-      signal: controller.signal,
-    });
+    await withTimeout(client.connect(transport), timeoutMs);
 
-    const initResult = (await initResp.json()) as any;
-    const serverInfo = initResult.result?.serverInfo || {};
+    const toolsResult = await withTimeout(client.listTools(), timeoutMs);
 
-    // Send tools/list
-    const toolsResp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/list",
-        params: {},
-      }),
-      signal: controller.signal,
-    });
-
-    const toolsResult = (await toolsResp.json()) as any;
-    const tools: LiveTool[] = (toolsResult.result?.tools || []).map(
-      (t: any) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      })
-    );
+    const serverVersion = client.getServerVersion();
+    const tools: LiveTool[] = (toolsResult.tools || []).map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema as Record<string, unknown> | undefined,
+    }));
 
     return {
-      protocolVersion: initResult.result?.protocolVersion,
-      serverName: serverInfo.name,
-      serverVersion: serverInfo.version,
+      protocolVersion: (transport as any).protocolVersion,
+      serverName: serverVersion?.name,
+      serverVersion: serverVersion?.version,
       tools,
     };
   } finally {
-    clearTimeout(timeout);
+    await client.close().catch(() => {});
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Connection timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer!));
 }

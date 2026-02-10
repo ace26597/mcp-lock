@@ -95,14 +95,36 @@ export function writeLockfile(lockfile: Lockfile, outputPath: string): void {
 }
 
 /**
- * Read lockfile from disk.
+ * Read lockfile from disk with validation.
  */
 export function readLockfile(lockfilePath: string): Lockfile | null {
   if (!existsSync(lockfilePath)) return null;
   try {
     const raw = readFileSync(lockfilePath, "utf-8");
-    return JSON.parse(raw) as Lockfile;
-  } catch {
+    const parsed = JSON.parse(raw, (key, value) => {
+      // Block prototype pollution payloads
+      if (key === "__proto__" || key === "constructor" || key === "prototype") {
+        return undefined;
+      }
+      return value;
+    });
+    // Validate basic structure
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.version !== "number" ||
+      typeof parsed.servers !== "object"
+    ) {
+      return null;
+    }
+    if (parsed.version > LOCKFILE_VERSION) {
+      throw new Error(
+        `Lockfile version ${parsed.version} is newer than supported (${LOCKFILE_VERSION}). Please upgrade mcp-lock.`
+      );
+    }
+    return parsed as Lockfile;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Lockfile version")) throw err;
     return null;
   }
 }

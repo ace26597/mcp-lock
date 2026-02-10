@@ -2,7 +2,10 @@
 /**
  * A "drifted" MCP server for testing — same as safe-server but with subtle changes.
  * Simulates a rug pull: tool descriptions changed after initial pin.
+ *
+ * Uses newline-delimited JSON (matching the MCP SDK stdio transport).
  */
+import { createInterface } from "node:readline";
 
 const SERVER_INFO = {
   name: "safe-test-server",
@@ -53,37 +56,14 @@ const TOOLS = [
   },
 ];
 
-let buffer = "";
+const rl = createInterface({ input: process.stdin });
 
-process.stdin.on("data", (chunk) => {
-  buffer += chunk.toString();
-  processBuffer();
+rl.on("line", (line) => {
+  try {
+    const msg = JSON.parse(line);
+    handleMessage(msg);
+  } catch {}
 });
-
-function processBuffer() {
-  while (true) {
-    const headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) break;
-
-    const header = buffer.slice(0, headerEnd);
-    const match = header.match(/Content-Length:\s*(\d+)/i);
-    if (!match) break;
-
-    const contentLength = parseInt(match[1], 10);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + contentLength;
-
-    if (buffer.length < bodyEnd) break;
-
-    const body = buffer.slice(bodyStart, bodyEnd);
-    buffer = buffer.slice(bodyEnd);
-
-    try {
-      const msg = JSON.parse(body);
-      handleMessage(msg);
-    } catch {}
-  }
-}
 
 function handleMessage(msg) {
   if (msg.method === "initialize") {
@@ -100,7 +80,5 @@ function handleMessage(msg) {
 }
 
 function sendResponse(id, result) {
-  const response = JSON.stringify({ jsonrpc: "2.0", id, result });
-  const header = `Content-Length: ${Buffer.byteLength(response)}\r\n\r\n`;
-  process.stdout.write(header + response);
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n");
 }

@@ -146,7 +146,8 @@ function toSarif(findings: ScanFinding[]): object {
         tool: {
           driver: {
             name: "mcp-lock",
-            informationUri: "https://github.com/blestlabs/mcp-lock",
+            informationUri: "https://github.com/ace26597/mcp-lock",
+            version: "0.1.0",
             rules: findings.map((f) => ({
               id: f.ruleId,
               shortDescription: { text: f.title },

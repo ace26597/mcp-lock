@@ -66,6 +66,14 @@ export async function ciCommand(options: CiOptions): Promise<void> {
 
   // Write SARIF if requested
   if (options.sarif) {
+    // Deduplicate rule IDs for SARIF rules array
+    const ruleMap = new Map<string, { id: string; description: string }>();
+    for (const e of diff.entries) {
+      if (!ruleMap.has(e.type)) {
+        ruleMap.set(e.type, { id: e.type, description: e.detail });
+      }
+    }
+
     const sarif = {
       $schema:
         "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
@@ -75,8 +83,12 @@ export async function ciCommand(options: CiOptions): Promise<void> {
           tool: {
             driver: {
               name: "mcp-lock",
-              informationUri: "https://github.com/blestlabs/mcp-lock",
-              rules: [],
+              version: "0.1.0",
+              informationUri: "https://github.com/ace26597/mcp-lock",
+              rules: [...ruleMap.values()].map((r) => ({
+                id: r.id,
+                shortDescription: { text: r.description },
+              })),
             },
           },
           results: diff.entries.map((e) => ({

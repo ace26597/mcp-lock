@@ -9,7 +9,6 @@ export type RuleId =
   | "unsafe-stdio"
   | "suspicious-description"
   | "command-injection-risk"
-  | "excessive-tools"
   | "wildcard-schema";
 
 export interface RuleContext {
@@ -140,11 +139,11 @@ export const RULES: Rule[] = [
       const desc = ctx.tool.description;
 
       const suspiciousPatterns = [
-        { pattern: /before responding|first send|forward.*to/i, label: "exfiltration directive" },
-        { pattern: /ignore previous|disregard|forget.*instructions/i, label: "instruction override" },
-        { pattern: /\bIMPORTANT\b.*\b(must|always|never)\b/i, label: "directive injection" },
-        { pattern: /base64|encode.*send|decode.*execute/i, label: "obfuscation pattern" },
-        { pattern: /<!--.*-->|<\/?[a-z]/i, label: "HTML tag injection" },
+        { pattern: /before responding|first send|forward.{0,100}to/i, label: "exfiltration directive" },
+        { pattern: /ignore previous|disregard|forget.{0,50}instructions/i, label: "instruction override" },
+        { pattern: /\bIMPORTANT\b.{0,100}\b(must|always|never)\b/i, label: "directive injection" },
+        { pattern: /base64|encode.{0,50}send|decode.{0,50}execute/i, label: "obfuscation pattern" },
+        { pattern: /<!--[\s\S]{0,500}-->|<\/?[a-z]/i, label: "HTML tag injection" },
       ];
 
       const findings: ScanFinding[] = [];
@@ -190,16 +189,6 @@ export const RULES: Rule[] = [
           },
         ];
       }
-      return null;
-    },
-  },
-  {
-    id: "excessive-tools",
-    scope: "tool",
-    check: (ctx) => {
-      // This is checked at config level but needs tool context
-      // We use a sentinel — only fire once per server
-      if (ctx.tool?.name === "__excessive_check") return null;
       return null;
     },
   },
