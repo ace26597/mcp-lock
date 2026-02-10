@@ -1,0 +1,66 @@
+{
+  "name": "mcp-lock",
+  "version": "0.1.0",
+  "description": "Supply chain security for MCP — pin, hash, detect drift in your AI tool chains",
+  "type": "module",
+  "bin": {
+    "mcp-lock": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "supply-chain",
+    "lockfile",
+    "drift-detection",
+    "ai-security",
+    "tool-poisoning",
+    "cli"
+  ],
+  "author": "BlestLabs",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/blestlabs/mcp-lock.git"
+  },
+  "homepage": "https://github.com/blestlabs/mcp-lock",
+  "bugs": {
+    "url": "https://github.com/blestlabs/mcp-lock/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.0",
+    "cosmiconfig": "^9.0.0",
+    "glob": "^11.0.0",
+    "jsonc-parser": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

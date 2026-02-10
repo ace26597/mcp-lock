@@ -1,0 +1,39 @@
+# GitHub Action: mcp-lock CI check
+# Add this to your repository's .github/workflows/ to verify MCP lockfile on every PR.
+# This workflow only uses static inputs (no user-controlled data in run commands).
+
+name: MCP Lock Check
+
+on:
+  pull_request:
+    paths:
+      - 'mcp-lock.json'
+      - '.claude.json'
+      - '**/claude_desktop_config.json'
+      - '**/mcp.json'
+      - '.mcp.json'
+
+jobs:
+  mcp-lock-check:
+    name: Check MCP Lockfile
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install mcp-lock
+        run: npm install -g mcp-lock
+
+      - name: Run mcp-lock CI check
+        run: mcp-lock ci --sarif mcp-lock-results.sarif
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: mcp-lock-results.sarif
