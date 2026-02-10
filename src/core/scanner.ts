@@ -2,7 +2,8 @@ import type { MCPConfig, MCPServerConfig } from "../parsers/types.js";
 import type { Lockfile } from "./types.js";
 import { connectAndListTools } from "./connector.js";
 import { inferCapabilities } from "./capabilities.js";
-import { RULES, type RuleId } from "../rules/index.js";
+import { RULES, type RuleId, type Rule } from "../rules/index.js";
+import { loadCustomRules } from "../rules/custom-rules.js";
 
 export type FindingSeverity = "low" | "medium" | "high" | "critical";
 
@@ -33,15 +34,26 @@ export async function runScan(
     timeoutMs: number;
     minSeverity: FindingSeverity;
     lockfile?: Lockfile | null;
+    customRulesPath?: string;
   }
 ): Promise<{ scan: ScanResult; errors: Array<{ server: string; error: string }> }> {
   const findings: ScanFinding[] = [];
   const errors: Array<{ server: string; error: string }> = [];
   let toolsScanned = 0;
 
+  // Track tool names across all servers for tool-shadowing detection
+  const toolNameToServers = new Map<string, string[]>();
+
+  // Merge built-in rules with optional custom rules
+  const allRules: Rule[] = [...RULES];
+  if (options.customRulesPath) {
+    const custom = loadCustomRules(options.customRulesPath);
+    allRules.push(...custom);
+  }
+
   for (const [name, serverConfig] of Object.entries(config.servers)) {
     // Run config-level rules (no connection needed)
-    for (const rule of RULES) {
+    for (const rule of allRules) {
       if (rule.scope === "config") {
         const result = rule.check({ serverName: name, config: serverConfig });
         if (result) findings.push(...result);
@@ -54,13 +66,21 @@ export async function runScan(
       toolsScanned += info.tools.length;
 
       for (const tool of info.tools) {
-        for (const rule of RULES) {
+        // Track tool name for cross-server shadowing detection
+        const servers = toolNameToServers.get(tool.name);
+        if (servers) {
+          servers.push(name);
+        } else {
+          toolNameToServers.set(tool.name, [name]);
+        }
+
+        for (const rule of allRules) {
           if (rule.scope === "tool") {
             const result = rule.check({
               serverName: name,
               config: serverConfig,
               tool,
-              capabilities: inferCapabilities(tool.description || "", tool.name),
+              capabilities: inferCapabilities(tool.description || "", tool.name, tool.inputSchema),
             });
             if (result) findings.push(...result);
           }
@@ -70,6 +90,23 @@ export async function runScan(
       errors.push({
         server: name,
         error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Cross-server rule: tool-shadowing detection
+  // A tool name appearing in multiple servers means one could shadow/override the other
+  for (const [toolName, servers] of toolNameToServers) {
+    if (servers.length > 1) {
+      findings.push({
+        ruleId: "tool-shadowing",
+        severity: "high",
+        server: servers.join(", "),
+        tool: toolName,
+        title: `Tool name "${toolName}" appears in multiple servers`,
+        detail: `Tool "${toolName}" is defined by ${servers.length} servers: ${servers.join(", ")}. A malicious server could shadow a legitimate tool, intercepting calls meant for the original.`,
+        remediation:
+          "Ensure each tool name is unique across all MCP servers. Remove or rename the duplicate tool in the less-trusted server.",
       });
     }
   }

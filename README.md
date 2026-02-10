@@ -41,6 +41,22 @@ npx mcp-lock ci
 
 ---
 
+## Auditing Untrusted Configs
+
+When scanning configs you don't fully trust, use `--no-connect` to analyze without executing any server commands:
+
+```bash
+# Safe audit — analyzes config structure without spawning any processes
+mcp-lock scan --no-connect -c untrusted-config.json
+
+# Safe pin — records config metadata without connecting
+mcp-lock pin --no-connect -c untrusted-config.json
+```
+
+> **Why?** `mcp-lock pin` spawns real MCP servers via stdio during pinning. A malicious config could use any executable as its `command`. The `--no-connect` flag skips all server connections, making it safe to audit any config file.
+
+---
+
 ## How It Works
 
 1. Run `mcp-lock pin` -- generates `mcp-lock.json` with SHA-256 hashes of every tool description and schema
@@ -135,8 +151,10 @@ $ mcp-lock scan
 | `unsafe-stdio` | Critical | Raw shell (bash/sh) as MCP server command |
 | `no-auth` | High | Remote HTTP servers without authentication |
 | `over-permissioned` | High | Tools with multiple dangerous capabilities |
+| `tool-shadowing` | High | Duplicate tool names across servers (shadowing attack) |
 | `command-injection-risk` | Medium | String inputs + execute capability |
 | `wildcard-schema` | Medium | Tools accepting arbitrary properties |
+| `unicode-obfuscation` | Critical | Cyrillic/homoglyph lookalikes, zero-width chars in descriptions |
 
 ### `mcp-lock ci`
 
@@ -196,18 +214,24 @@ CI failed -- critical drift detected. Run "mcp-lock pin" to update.
 
 ## Config Auto-Detection
 
-`mcp-lock` automatically finds your MCP config across 6+ clients:
+`mcp-lock` automatically finds your MCP config across 12+ clients:
 
-| Client | macOS | Windows | Linux |
-|--------|-------|---------|-------|
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%/Claude/claude_desktop_config.json` | `~/.config/claude/claude_desktop_config.json` |
-| Claude Code CLI | `~/.claude.json` | `~/.claude.json` | `~/.claude.json` |
-| Cursor | `~/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/mcp.json` | `%APPDATA%/Cursor/...` | `~/.config/Cursor/...` |
-| VS Code | `~/Library/Application Support/Code/User/settings.json` | `%APPDATA%/Code/...` | `~/.config/Code/...` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | same | same |
-| Project-local | `.mcp.json` in current directory | same | same |
+| Client | Config Location | Root Key |
+|--------|----------------|----------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | `mcpServers` |
+| Claude Code CLI | `~/.claude.json` | `mcpServers` |
+| Cursor | `~/Library/Application Support/Cursor/.../cursor.mcp/mcp.json` | `mcpServers` |
+| VS Code (Copilot) | `~/Library/Application Support/Code/User/settings.json` | `mcp.servers` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
+| OpenClaw | `~/.openclaw/openclaw.json` | `mcp.servers` |
+| Cline | VS Code globalStorage `.../cline_mcp_settings.json` | `mcpServers` |
+| Roo Code | VS Code globalStorage `.../cline_mcp_settings.json` | `mcpServers` |
+| GitHub Copilot | `~/.copilot/mcp-config.json` | `mcpServers` |
+| Amazon Q | `~/.aws/amazonq/mcp.json` | `mcpServers` |
+| Zed | `~/.config/zed/settings.json` | `context_servers` |
+| Project-local | `.mcp.json`, `.vscode/mcp.json`, `.roo/mcp.json`, `.amazonq/mcp.json` | varies |
 
-Or specify explicitly: `mcp-lock pin --config /path/to/config.json`
+Cross-platform paths (macOS/Windows/Linux) are auto-detected. Or specify explicitly: `mcp-lock pin --config /path/to/config.json`
 
 ---
 
@@ -243,16 +267,16 @@ Tested on Mac Mini M4 Pro, Node.js v22, 10 scenarios:
 
 | Operation | Time | Details |
 |-----------|------|---------|
-| `pin` (1 server, 3 tools) | ~114ms | Full MCP handshake + hash generation |
-| `pin` (2 servers, 8 tools) | ~116ms | Parallel server connections |
-| `diff` (no drift) | ~114ms | Connect + hash comparison |
-| `diff` (rug pull detected) | ~110ms | 5 changes caught (2 critical) |
-| `scan` (clean server) | ~113ms | 7 rules, 0 findings |
-| `scan` (poisoned server) | ~113ms | 9 findings (4 critical, 1 high) |
-| `ci` (pass) | ~115ms | Full lockfile verification |
-| `ci` (fail) | ~110ms | Critical drift + GitHub annotations |
+| `pin` (1 server, 3 tools) | ~173ms | Full MCP handshake + hash generation |
+| `pin` (2 servers, 8 tools) | ~175ms | Parallel server connections |
+| `diff` (no drift) | ~172ms | Connect + hash comparison |
+| `diff` (rug pull detected) | ~170ms | 5 changes caught (2 critical) |
+| `scan` (clean server) | ~174ms | 9 rules, 0 findings |
+| `scan` (poisoned server) | ~171ms | 9 findings (4 critical, 1 high) |
+| `ci` (pass) | ~175ms | Full lockfile verification |
+| `ci` (fail) | ~170ms | Critical drift + GitHub annotations |
 
-**Summary: 10 tests, 0 errors, avg 114ms/operation**
+**Summary: 10 tests, 0 errors, avg 173ms/operation**
 
 Run benchmarks: `npm run benchmark`
 
@@ -284,7 +308,7 @@ mcp-lock catches these real-world MCP attack vectors:
 | **Lockfile pinning** | Yes | No | Yes (Go) | No |
 | **npm/npx install** | Yes | Yes | No | Yes |
 | **CI/CD integration** | Yes (SARIF) | Yes | Yes | No |
-| **Attack detection** | 7 rules | Cloud-based | N/A | 5 types |
+| **Attack detection** | 9 rules | Cloud-based | N/A | 5 types |
 | **Privacy** | Hash-only | Sends descriptions | Hash-only | Optional API |
 | **Language** | TypeScript | Python | Go | TypeScript |
 
@@ -320,11 +344,15 @@ const { diff } = await computeDiff(lockfile, config, { timeoutMs: 10000, connect
 
 - [x] **Phase 1:** Core CLI (`pin`, `diff`, `scan`, `ci`)
 - [x] **Phase 1:** Lockfile generation + drift detection
-- [x] **Phase 1:** 7 built-in security rules
+- [x] **Phase 1:** 9 built-in security rules
 - [x] **Phase 1:** GitHub Action + SARIF output
 - [ ] **Phase 2:** Custom rules (`.mcp-lock-rules.yaml`)
 - [ ] **Phase 2:** Agent-framework config parsers (LangChain, CrewAI, AutoGen)
 - [ ] **Phase 2:** MCP Advisory Database integration
+- [ ] **Phase 2:** `--watch` mode (daemon re-diffing)
+- [ ] **Phase 2:** OpenClaw config parser
+- [ ] **Phase 2:** InputSchema-based capability inference
+- [ ] **Phase 2:** Coverage badge
 - [ ] **Phase 3:** Runtime monitoring (file watcher)
 - [ ] **Phase 3:** `mcp-lock fix` auto-remediation
 - [ ] **Phase 3:** Hosted dashboard (freemium)

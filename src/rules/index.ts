@@ -2,14 +2,19 @@ import type { MCPServerConfig } from "../parsers/types.js";
 import type { LiveTool } from "../core/types.js";
 import type { ScanFinding, FindingSeverity } from "../core/scanner.js";
 
-export type RuleId =
+export type BuiltinRuleId =
   | "no-auth"
   | "over-permissioned"
   | "exposed-secrets"
   | "unsafe-stdio"
   | "suspicious-description"
   | "command-injection-risk"
-  | "wildcard-schema";
+  | "wildcard-schema"
+  | "tool-shadowing"
+  | "unicode-obfuscation";
+
+/** Rule IDs: built-in IDs or custom string IDs from YAML rules */
+export type RuleId = BuiltinRuleId | (string & {});
 
 export interface RuleContext {
   serverName: string;
@@ -218,6 +223,88 @@ export const RULES: Rule[] = [
         ];
       }
       return null;
+    },
+  },
+  {
+    id: "unicode-obfuscation",
+    scope: "tool",
+    check: (ctx) => {
+      if (!ctx.tool) return null;
+      const findings: ScanFinding[] = [];
+
+      // Cyrillic homoglyphs that look like Latin letters
+      const cyrillicHomoglyphs =
+        "\u0430\u0435\u043E\u0440\u0441\u0445\u0443" + // lowercase: а е о р с х у
+        "\u0410\u0412\u0415\u041A\u041C\u041D\u041E\u0420\u0421\u0422\u0425"; // uppercase: А В Е К М Н О Р С Т Х
+      const cyrillicHomoglyphSet = new Set(cyrillicHomoglyphs);
+
+      // Zero-width characters that can hide text
+      const zeroWidthChars = new Set([
+        "\u200B", // zero-width space
+        "\u200C", // zero-width non-joiner
+        "\u200D", // zero-width joiner
+        "\uFEFF", // zero-width no-break space (BOM)
+      ]);
+
+      const latinPattern = /[a-zA-Z]/;
+      const cyrillicRangePattern = /[\u0400-\u04FF]/;
+
+      function checkText(text: string, location: string): void {
+        // Check for Cyrillic homoglyphs mixed with Latin letters
+        const hasLatin = latinPattern.test(text);
+        const hasCyrillic = cyrillicRangePattern.test(text);
+
+        if (hasLatin && hasCyrillic) {
+          // Find specific homoglyphs
+          const foundHomoglyphs: string[] = [];
+          for (const char of text) {
+            if (cyrillicHomoglyphSet.has(char)) {
+              const codePoint = char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+              foundHomoglyphs.push(`U+${codePoint}`);
+            }
+          }
+          if (foundHomoglyphs.length > 0) {
+            findings.push({
+              ruleId: "unicode-obfuscation",
+              severity: "critical" as FindingSeverity,
+              server: ctx.serverName,
+              tool: ctx.tool!.name,
+              title: `Unicode homoglyph obfuscation in tool ${location}`,
+              detail: `Tool "${ctx.tool!.name}" ${location} contains Cyrillic characters that visually mimic Latin letters (${[...new Set(foundHomoglyphs)].join(", ")}). This is a common technique to bypass text-based security checks.`,
+              remediation:
+                "Replace all Cyrillic homoglyphs with their ASCII Latin equivalents. If this is unexpected, the server may be compromised.",
+            });
+          }
+        }
+
+        // Check for zero-width characters
+        const foundZeroWidth: string[] = [];
+        for (const char of text) {
+          if (zeroWidthChars.has(char)) {
+            const codePoint = char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+            foundZeroWidth.push(`U+${codePoint}`);
+          }
+        }
+        if (foundZeroWidth.length > 0) {
+          findings.push({
+            ruleId: "unicode-obfuscation",
+            severity: "critical" as FindingSeverity,
+            server: ctx.serverName,
+            tool: ctx.tool!.name,
+            title: `Zero-width characters in tool ${location}`,
+            detail: `Tool "${ctx.tool!.name}" ${location} contains zero-width Unicode characters (${[...new Set(foundZeroWidth)].join(", ")}). These invisible characters can hide malicious text from human review.`,
+            remediation:
+              "Remove all zero-width characters. If this is unexpected, the server may be compromised.",
+          });
+        }
+      }
+
+      checkText(ctx.tool.name, "name");
+      if (ctx.tool.description) {
+        checkText(ctx.tool.description, "description");
+      }
+
+      return findings.length > 0 ? findings : null;
     },
   },
 ];

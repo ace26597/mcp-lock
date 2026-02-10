@@ -38,6 +38,7 @@ export async function scanCommand(options: ScanOptions): Promise<void> {
     timeoutMs,
     minSeverity,
     lockfile,
+    customRulesPath: options.rules,
   });
 
   spinner.stop();

@@ -98,30 +98,135 @@ function getConfigLocations(): ConfigLocation[] {
   }
 
   // Windsurf
+  locations.push({
+    client: "windsurf",
+    path: join(home, ".codeium/windsurf/mcp_config.json"),
+    exists: false,
+  });
+
+  // OpenClaw
+  locations.push({
+    client: "openclaw",
+    path: join(home, ".openclaw/openclaw.json"),
+    exists: false,
+  });
+
+  // Cline (VS Code extension)
   if (plat === "darwin") {
     locations.push({
-      client: "windsurf",
-      path: join(home, ".codeium/windsurf/mcp_config.json"),
+      client: "cline",
+      path: join(
+        home,
+        "Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+      ),
       exists: false,
     });
   } else if (plat === "win32") {
+    const appData = process.env.APPDATA || join(home, "AppData/Roaming");
     locations.push({
-      client: "windsurf",
-      path: join(home, ".codeium/windsurf/mcp_config.json"),
+      client: "cline",
+      path: join(
+        appData,
+        "Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+      ),
       exists: false,
     });
   } else {
     locations.push({
-      client: "windsurf",
-      path: join(home, ".codeium/windsurf/mcp_config.json"),
+      client: "cline",
+      path: join(
+        home,
+        ".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+      ),
       exists: false,
     });
   }
 
-  // Project-local (.mcp.json in CWD)
+  // Roo Code (VS Code extension)
+  if (plat === "darwin") {
+    locations.push({
+      client: "roo-code",
+      path: join(
+        home,
+        "Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json"
+      ),
+      exists: false,
+    });
+  } else if (plat === "win32") {
+    const appData = process.env.APPDATA || join(home, "AppData/Roaming");
+    locations.push({
+      client: "roo-code",
+      path: join(
+        appData,
+        "Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json"
+      ),
+      exists: false,
+    });
+  } else {
+    locations.push({
+      client: "roo-code",
+      path: join(
+        home,
+        ".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json"
+      ),
+      exists: false,
+    });
+  }
+
+  // GitHub Copilot CLI
+  locations.push({
+    client: "github-copilot",
+    path: join(home, ".copilot/mcp-config.json"),
+    exists: false,
+  });
+
+  // Amazon Q Developer
+  locations.push({
+    client: "amazon-q",
+    path: join(home, ".aws/amazonq/mcp.json"),
+    exists: false,
+  });
+
+  // Zed
+  if (plat === "darwin") {
+    locations.push({
+      client: "zed",
+      path: join(home, "Library/Application Support/Zed/settings.json"),
+      exists: false,
+    });
+  } else {
+    locations.push({
+      client: "zed",
+      path: join(home, ".config/zed/settings.json"),
+      exists: false,
+    });
+  }
+
+  // Project-local configs
   locations.push({
     client: "project-local",
     path: join(process.cwd(), ".mcp.json"),
+    exists: false,
+  });
+
+  // Roo Code project-local
+  locations.push({
+    client: "roo-code-local",
+    path: join(process.cwd(), ".roo/mcp.json"),
+    exists: false,
+  });
+
+  // GitHub Copilot project-local
+  locations.push({
+    client: "copilot-local",
+    path: join(process.cwd(), ".vscode/mcp.json"),
+    exists: false,
+  });
+
+  // Amazon Q project-local
+  locations.push({
+    client: "amazon-q-local",
+    path: join(process.cwd(), ".amazonq/mcp.json"),
     exists: false,
   });
 
@@ -144,11 +249,20 @@ export function discoverConfig(explicitPath?: string): MCPConfig | null {
   const locations = getConfigLocations();
   const priority = [
     "project-local",
+    "roo-code-local",
+    "copilot-local",
+    "amazon-q-local",
     "claude-code",
     "claude-desktop",
     "cursor",
     "vscode",
     "windsurf",
+    "openclaw",
+    "cline",
+    "roo-code",
+    "github-copilot",
+    "amazon-q",
+    "zed",
   ];
 
   for (const client of priority) {
@@ -184,19 +298,33 @@ function parseConfigFile(
 
     let servers: Record<string, MCPServerConfig> = {};
 
-    // Claude Desktop / Cursor / Windsurf: { "mcpServers": { ... } }
+    // Claude Desktop / Cursor / Windsurf / Cline / Roo Code / Amazon Q: { "mcpServers": { ... } }
     if (parsed.mcpServers && typeof parsed.mcpServers === "object") {
       servers = normalizeServers(parsed.mcpServers);
     }
-    // Claude Code CLI: { "mcpServers": { ... } } (same key)
-    // VS Code: { "mcp": { "servers": { ... } } }
+    // VS Code / OpenClaw: { "mcp": { "servers": { ... } } }
     else if (
       parsed.mcp?.servers &&
       typeof parsed.mcp.servers === "object"
     ) {
       servers = normalizeServers(parsed.mcp.servers);
     }
-    // Direct servers key
+    // OpenClaw flat mcp key: { "mcp": { "server-name": { ... } } }
+    else if (parsed.mcp && typeof parsed.mcp === "object" && !parsed.mcp.servers) {
+      servers = normalizeServers(parsed.mcp);
+    }
+    // OpenClaw provider-scoped: { "provider": { "mcpServers": { ... } } }
+    else if (
+      parsed.provider?.mcpServers &&
+      typeof parsed.provider.mcpServers === "object"
+    ) {
+      servers = normalizeServers(parsed.provider.mcpServers);
+    }
+    // Zed: { "context_servers": { ... } }
+    else if (parsed.context_servers && typeof parsed.context_servers === "object") {
+      servers = normalizeServers(parsed.context_servers);
+    }
+    // GitHub Copilot / project-local: { "servers": { ... } }
     else if (parsed.servers && typeof parsed.servers === "object") {
       servers = normalizeServers(parsed.servers);
     }

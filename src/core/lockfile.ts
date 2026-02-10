@@ -57,7 +57,7 @@ function buildServerEntry(
     tools[tool.name] = {
       descriptionHash: hashValue(tool.description || ""),
       inputSchemaHash: hashValue(tool.inputSchema || {}),
-      capabilities: inferCapabilities(tool.description || "", tool.name),
+      capabilities: inferCapabilities(tool.description || "", tool.name, tool.inputSchema),
     };
   }
 
