@@ -84,7 +84,7 @@ export async function ciCommand(options: CiOptions): Promise<void> {
             driver: {
               name: "mcp-lock",
               version: "0.1.0",
-              informationUri: "https://github.com/ace26597/mcp-lock",
+              informationUri: "https://github.com/blestlabs/mcp-lock",
               rules: [...ruleMap.values()].map((r) => ({
                 id: r.id,
                 shortDescription: { text: r.description },

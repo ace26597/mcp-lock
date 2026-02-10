@@ -1,5 +1,8 @@
 {
-  "name": "mcp-lock",
+  "name": "@blestlabs/mcp-lock",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.1.0",
   "description": "Supply chain security for MCP — pin, hash, detect drift in your AI tool chains",
   "type": "module",
@@ -45,11 +48,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ace26597/mcp-lock.git"
+    "url": "https://github.com/blestlabs/mcp-lock.git"
   },
-  "homepage": "https://github.com/ace26597/mcp-lock",
+  "homepage": "https://github.com/blestlabs/mcp-lock",
   "bugs": {
-    "url": "https://github.com/ace26597/mcp-lock/issues"
+    "url": "https://github.com/blestlabs/mcp-lock/issues"
   },
   "engines": {
     "node": ">=18.0.0"

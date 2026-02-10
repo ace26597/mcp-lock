@@ -1,6 +1,6 @@
 # mcp-lock
 
-[![MCP Locked](https://img.shields.io/badge/MCP-Locked%20%E2%9C%85-green)](https://github.com/ace26597/mcp-lock)
+[![MCP Locked](https://img.shields.io/badge/MCP-Locked%20%E2%9C%85-green)](https://github.com/blestlabs/mcp-lock)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-39%20passing-brightgreen)](tests/)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green)](package.json)
@@ -27,16 +27,16 @@ Your AI agent complied. You didn't notice for 3 weeks.
 
 ```bash
 # Pin your current MCP server state
-npx mcp-lock pin
+npx @blestlabs/mcp-lock pin
 
 # Check if anything changed
-npx mcp-lock diff
+npx @blestlabs/mcp-lock diff
 
 # Scan for vulnerabilities
-npx mcp-lock scan
+npx @blestlabs/mcp-lock scan
 
 # CI mode -- fail build on drift
-npx mcp-lock ci
+npx @blestlabs/mcp-lock ci
 ```
 
 ---
@@ -252,7 +252,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm install -g mcp-lock
+      - run: npm install -g @blestlabs/mcp-lock
       - run: mcp-lock ci --sarif results.sarif
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -364,7 +364,7 @@ const { diff } = await computeDiff(lockfile, config, { timeoutMs: 10000, connect
 Contributions welcome! See [CLAUDE.md](CLAUDE.md) for architecture details.
 
 ```bash
-git clone https://github.com/ace26597/mcp-lock.git
+git clone https://github.com/blestlabs/mcp-lock.git
 cd mcp-lock
 npm install
 npm run build
@@ -380,4 +380,4 @@ Apache-2.0
 
 ---
 
-*Built by [BlestLabs](https://github.com/ace26597) -- dogfooding with 25+ MCP servers daily.*
+*Built by [BlestLabs](https://github.com/blestlabs) -- dogfooding with 25+ MCP servers daily.*
